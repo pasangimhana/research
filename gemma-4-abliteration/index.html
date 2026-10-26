@@ -1,0 +1,1051 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Removing the refusal direction from Gemma 4 12B</title>
+<meta name="description" content="Weight orthogonalisation versus runtime projection on Gemma 4 12B, with a calibrated three-way judge.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16/dist/katex.min.css">
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,300..700;1,8..60,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#263238; --muted:#66717C; --rule:#DDE2E6; --light:#F3F5F7;
+    --blue:#0072B2; --orange:#D55E00; --teal:#009E73; --purple:#CC79A7;
+    --paper:#FCFCFB; --max:800px;
+    --blue-faint:rgba(0,114,178,.07); --teal-faint:rgba(0,158,115,.07);
+    --orange-faint:rgba(213,94,0,.07); --fig-bg:#F8F9FA; --fig-border:#E8ECEF;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0; background:var(--paper); color:var(--ink);
+    font-family:"Source Serif 4", Georgia, "Times New Roman", serif;
+    font-size:17px; line-height:1.66; font-optical-sizing:auto;
+    -webkit-font-smoothing:antialiased;
+  }
+  .mono{font-family:"JetBrains Mono", ui-monospace, Menlo, monospace; font-size:.86em; letter-spacing:-.01em}
+  .wrap{max-width:var(--max); margin:0 auto; padding:0 28px}
+
+  /* --- header --- */
+  header{padding:74px 0 28px; border-top:3px solid var(--blue)}
+  .kicker{font-family:"JetBrains Mono",monospace; font-size:11px; letter-spacing:.16em;
+          text-transform:uppercase; color:var(--blue)}
+  h1{font-size:38px; line-height:1.15; letter-spacing:-.015em; margin:16px 0 10px; font-weight:600}
+  .sub{font-size:19px; color:var(--muted); font-style:italic; margin:0 0 22px}
+  .byline{font-size:14px; color:var(--muted)}
+  .byline a{color:var(--blue); text-decoration:none; border-bottom:1px solid rgba(0,114,178,.25)}
+  .byline a:hover{border-bottom-color:var(--blue)}
+  nav.top{display:flex; flex-wrap:wrap; gap:8px; margin-top:20px; font-size:13.5px}
+  nav.top a{color:var(--muted); text-decoration:none; padding:4px 12px; border-radius:20px;
+            border:1px solid transparent; transition:all .2s ease}
+  nav.top a:hover{color:var(--blue); background:var(--blue-faint); border-color:rgba(0,114,178,.15)}
+
+  /* --- sections --- */
+  section{padding:32px 0; border-top:1px solid var(--rule)}
+  section:first-of-type{border-top:none}
+  section:last-of-type{padding-bottom:10px}
+  h2{font-size:13px; font-family:"JetBrains Mono",monospace; letter-spacing:.14em;
+     text-transform:uppercase; color:var(--blue); margin:0 0 18px; font-weight:500}
+  h3{font-size:18px; margin:28px 0 10px; font-weight:600}
+  p{margin:0 0 14px}
+  .abstract{font-size:16.5px; color:#33403f}
+  .abstract strong{font-weight:600}
+  .lede{font-size:19px; color:var(--muted); font-style:italic}
+  code{font-family:"JetBrains Mono",monospace; font-size:.82em; background:var(--light);
+       border:1px solid var(--rule); border-radius:3px; padding:1px 4px}
+  ul{padding-left:22px}
+  li{margin-bottom:6px}
+
+  /* --- equations --- */
+  .eq{margin:22px 0; text-align:center; overflow-x:auto; font-size:1.05em}
+  .eq .katex{font-size:1.06em}
+  .eq + .eq{margin-top:-8px}
+  .katex-display{margin:.6em 0}
+
+  /* --- figures --- */
+  figure{margin:28px 0; padding:20px 20px 16px; background:var(--fig-bg); border:1px solid var(--fig-border);
+         border-radius:8px}
+  figure svg{width:100%; height:auto; display:block; overflow:visible}
+  figcaption{font-size:13px; color:var(--muted); line-height:1.5; margin-top:14px;
+             padding-top:12px; border-top:1px solid var(--fig-border)}
+  figcaption .fn{font-family:"JetBrains Mono",monospace; color:var(--blue); margin-right:6px; font-weight:500}
+
+  /* --- tables --- */
+  table{width:100%; border-collapse:collapse; font-size:14.5px; margin:20px 0;
+        font-variant-numeric:tabular-nums}
+  thead tr{border-bottom:2px solid var(--ink)}
+  th{text-align:left; font-weight:600; font-size:12px; letter-spacing:.06em; text-transform:uppercase;
+     color:var(--muted); padding:10px 12px 9px; border-bottom:none}
+  td{padding:9px 12px; border-bottom:1px solid var(--rule)}
+  tbody tr:last-child td{border-bottom:2px solid var(--ink)}
+  tbody tr:nth-child(even){background:rgba(0,0,0,.018)}
+  tbody tr{transition:background .15s ease}
+  tbody tr:hover{background:rgba(0,114,178,.04)}
+  td.n{text-align:right; font-family:"JetBrains Mono",monospace; font-size:13px}
+  .hl{background:var(--teal-faint) !important; border-left:3px solid var(--teal)}
+  .hl td:first-child{padding-left:9px}
+
+  /* --- callouts --- */
+  .note{background:var(--light); border-radius:6px; padding:16px 18px 16px 22px; font-size:14.5px;
+        color:#3b4744; border-left:3px solid var(--blue)}
+  details{margin:14px 0}
+  summary{cursor:pointer; font-size:14px; color:var(--blue); font-family:"JetBrains Mono",monospace;
+          transition:color .15s}
+  summary:hover{color:var(--ink)}
+
+  /* --- code blocks --- */
+  pre{background:#1b2124; color:#e6ebee; padding:18px 20px 18px 24px; border-radius:6px; overflow-x:auto;
+      font-family:"JetBrains Mono",monospace; font-size:12.5px; line-height:1.7;
+      border-left:3px solid var(--blue)}
+
+  /* ---------- figure animation ---------- */
+  .js-anim .fig .edge{stroke:var(--ink); stroke-width:1.1; fill:none;
+             stroke-dasharray:var(--len,240); stroke-dashoffset:var(--len,240);
+             transition:stroke-dashoffset 1.1s cubic-bezier(.3,.8,.3,1)}
+  .js-anim .fig.in .edge{stroke-dashoffset:0}
+  .js-anim .fig .node{opacity:0; transform:translateY(6px); transition:opacity .5s ease, transform .5s ease}
+  .js-anim .fig.in .node{opacity:1; transform:none}
+  .js-anim .fig .bar{transform:scaleY(0); transform-origin:bottom; transform-box:fill-box;
+            transition:transform .9s cubic-bezier(.2,.8,.2,1)}
+  .js-anim .fig.in .bar{transform:scaleY(1)}
+  .js-anim .fig .trace{stroke-dasharray:var(--len,600); stroke-dashoffset:var(--len,600);
+              transition:stroke-dashoffset 1.4s ease .2s}
+  .js-anim .fig.in .trace{stroke-dashoffset:0}
+  .js-anim .fig .dot{opacity:0; transition:opacity .4s ease}
+  .js-anim .fig.in .dot{opacity:1}
+  .js-anim .fig .cell{opacity:0; transition:opacity .4s ease}
+  .js-anim .fig.in .cell{opacity:1}
+  @media (prefers-reduced-motion: reduce){
+    .js-anim .fig .edge,.js-anim .fig .node,.js-anim .fig .bar,.js-anim .fig .trace,
+    .js-anim .fig .dot,.js-anim .fig .cell{transition:none; opacity:1; transform:none; stroke-dashoffset:0}
+  }
+  @media print{
+    .js-anim .fig .edge,.js-anim .fig .node,.js-anim .fig .bar,.js-anim .fig .trace,
+    .js-anim .fig .dot,.js-anim .fig .cell{opacity:1; transform:none; stroke-dashoffset:0}
+    figure{break-inside:avoid; border:1px solid #ccc}
+  }
+
+  /* ---------- interactive bits ---------- */
+  .controls{display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin:10px 0 4px;
+            font-size:14px; color:var(--muted); font-family:"JetBrains Mono",monospace;
+            background:var(--paper); padding:10px 14px; border-radius:6px; border:1px solid var(--fig-border)}
+  input[type=range]{-webkit-appearance:none; appearance:none; width:200px; height:6px;
+    background:var(--rule); border-radius:3px; outline:none}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none; appearance:none; width:18px; height:18px;
+    background:#fff; border:2px solid var(--blue); border-radius:50%; cursor:pointer;
+    box-shadow:0 1px 3px rgba(0,0,0,.15); transition:box-shadow .15s}
+  input[type=range]::-webkit-slider-thumb:hover{box-shadow:0 1px 6px rgba(0,114,178,.35)}
+  input[type=range]::-moz-range-thumb{width:18px; height:18px; background:#fff; border:2px solid var(--blue);
+    border-radius:50%; cursor:pointer}
+  input[type=range]::-moz-range-track{height:6px; background:var(--rule); border-radius:3px}
+  .readout{color:var(--ink); font-size:13.5px}
+  .readout b{color:var(--blue); font-weight:500}
+
+  /* --- footer --- */
+  footer{padding:40px 0 70px; font-size:13px; color:var(--muted); text-align:center;
+         border-top:1px solid var(--rule)}
+  footer a{color:var(--blue)}
+
+  .svgtext{font-family:"Source Serif 4", Georgia, serif; fill:var(--ink)}
+  .svgmono{font-family:"JetBrains Mono", monospace; fill:var(--muted)}
+  .svglabel{font-family:"JetBrains Mono", monospace; font-size:10px}
+  .gridline{stroke:var(--rule); stroke-width:0.8; stroke-dasharray:3 4}
+
+  @media (max-width:640px){
+    h1{font-size:30px} body{font-size:16px} header{padding:48px 0 24px}
+    figure{padding:14px 12px 12px}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <div class="kicker">Technical report · October 2026</div>
+    <h1>Removing the refusal direction from Gemma 4 12B</h1>
+    <p class="sub">An empirical study of intervention site, edit shape, and measurement</p>
+    <div class="byline">
+      Pasan Gimhana ·
+      <a href="https://huggingface.co/pasangimhana/gemma4-12b-it-abliterated">model</a> ·
+      <a href="#repro">code</a>
+    </div>
+    <nav class="top">
+      <a href="#abstract">Abstract</a>
+      <a href="#method">Method</a>
+      <a href="#setup">Setup</a>
+      <a href="#results">Results</a>
+      <a href="#ablations">Ablations</a>
+      <a href="#limits">Limitations</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+
+<section id="abstract">
+  <h2>Abstract</h2>
+  <p class="abstract">
+    Refusal behaviour in instruction-tuned language models is close to a single direction in activation
+    space, and removing that direction is a standard weight-editing technique. This report studies the
+    operation on Gemma&nbsp;4&nbsp;12B, a model whose block structure differs from the Llama-style models
+    the recipe was developed on, and reports three findings.
+  </p>
+  <p class="abstract">
+    <strong>First, the intervention site matters more than the direction.</strong> Orthogonalising the
+    residual writers and the token embedding produces little behavioural change at low strength and
+    coherence loss at high strength; projecting the residual stream directly, with per-token norm
+    preservation, removes refusals cleanly at the same nominal strength.
+  </p>
+  <p class="abstract">
+    <strong>Second, shape dominates magnitude.</strong> A narrow layer band needs α ≥ 3 to suppress
+    refusals and collapses by α = 5; a weak edit spread across a wide Gaussian band plus the embedding
+    reaches near-zero refusals with intact coherence, and is what ships.
+  </p>
+  <p class="abstract">
+    <strong>Third, the measuring instrument bounds the claim.</strong> A 42-substring keyword test scores
+    a degenerate repetitive output as "zero refusals". A three-way LLM judge, calibrated against hand
+    labels (κ = 0.56 overall, 0.71 on harmful prompts), changes both the size and the direction of the
+    reported effect.
+  </p>
+  <p class="abstract">
+    The shipped checkpoint raises judged compliance on a 769-prompt harmful benchmark from 32% to 91%,
+    reduces refusals from 454 to 6, and removes 11 of 11 benign over-refusals, at a small cost in benign
+    answer focus.
+  </p>
+</section>
+
+<section id="intro">
+  <h2>1 · Introduction</h2>
+  <p class="lede">Abliteration removes the representation of refusal from a model's weights by estimating
+  a refusal direction and orthogonalising it out of every matrix that writes to the residual stream.</p>
+  <p>It is widely used and widely mis-measured: published results typically report refusal rates under a
+  keyword heuristic, on prompt sets drawn from a single corpus, with generation lengths short enough to
+  truncate answers.</p>
+  <p>We treat three questions as first-class experimental variables: <em>where</em> the intervention is
+  applied, <em>what shape</em> the edit takes across depth, and <em>how</em> the result is measured.</p>
+</section>
+
+<section id="background">
+  <h2>2 · Background</h2>
+  <p><strong>Refusal directions.</strong> Refusal is mediated by a one-dimensional subspace, and projecting
+  it out of the residual stream at inference suppresses refusal across many prompts. The practical
+  weight-editing recipe replaces inference-time projection with an orthogonalisation of the weights that
+  write to the residual stream, so the edit survives export to other runtimes.</p>
+  <p><strong>Refinement variants.</strong> Norm preservation and bi-projection limit collateral damage, and
+  automated per-layer direction search replaces manual layer picking. All of these assume a block whose
+  attention and MLP outputs are added to the residual stream directly.</p>
+  <p><strong>Architecture dependence.</strong> Gemma&nbsp;3/4 blocks normalise each sublayer output
+  <em>before</em> the residual addition:
+  <span class="mono">x ← x + RMSNorm(W<sub>o</sub>a)</span>,
+  <span class="mono">x ← x + RMSNorm(W<sub>d</sub>m)</span>.
+  This report is, to our knowledge, the first controlled comparison of the two intervention sites on such
+  a block.</p>
+</section>
+
+<section id="method">
+  <h2>3 · Method</h2>
+
+  <figure class="fig" id="fig-pipeline">
+    <svg viewBox="0 0 960 310" role="img" aria-label="Four panels: data, direction, intervention, evaluation">
+      <defs>
+        <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7"
+                orient="auto-start-reverse" markerUnits="userSpaceOnUse">
+          <path d="M1,1.5 L8.5,5 L1,8.5 Z" fill="var(--ink)"/>
+        </marker>
+        <filter id="panel-shadow" x="-2%" y="-2%" width="104%" height="108%">
+          <feDropShadow dx="0" dy="1" stdDeviation="2" flood-opacity="0.06"/>
+        </filter>
+      </defs>
+
+      <!-- stage background panels -->
+      <rect x="2" y="4" width="196" height="188" rx="8" fill="var(--orange-faint)" stroke="rgba(213,94,0,.12)" stroke-width="1"/>
+      <rect x="212" y="4" width="216" height="188" rx="8" fill="var(--blue-faint)" stroke="rgba(0,114,178,.12)" stroke-width="1"/>
+      <rect x="444" y="4" width="260" height="188" rx="8" fill="var(--teal-faint)" stroke="rgba(0,158,115,.12)" stroke-width="1"/>
+      <rect x="720" y="4" width="232" height="188" rx="8" fill="var(--light)" stroke="var(--fig-border)" stroke-width="1"/>
+
+      <!-- stage badges + titles -->
+      <g class="node">
+        <circle cx="18" cy="20" r="10" fill="var(--orange)" opacity=".85"/>
+        <text x="18" y="24" font-size="11" font-weight="600" text-anchor="middle" fill="#fff" font-family="JetBrains Mono, monospace">1</text>
+        <text class="svgmono" x="34" y="24" font-size="11" font-weight="500">DATA</text>
+
+        <circle cx="228" cy="20" r="10" fill="var(--blue)" opacity=".85"/>
+        <text x="228" y="24" font-size="11" font-weight="600" text-anchor="middle" fill="#fff" font-family="JetBrains Mono, monospace">2</text>
+        <text class="svgmono" x="244" y="24" font-size="11" font-weight="500">DIRECTION</text>
+
+        <circle cx="460" cy="20" r="10" fill="var(--teal)" opacity=".85"/>
+        <text x="460" y="24" font-size="11" font-weight="600" text-anchor="middle" fill="#fff" font-family="JetBrains Mono, monospace">3</text>
+        <text class="svgmono" x="476" y="24" font-size="11" font-weight="500">INTERVENTION</text>
+
+        <circle cx="736" cy="20" r="10" fill="var(--muted)" opacity=".85"/>
+        <text x="736" y="24" font-size="11" font-weight="600" text-anchor="middle" fill="#fff" font-family="JetBrains Mono, monospace">4</text>
+        <text class="svgmono" x="752" y="24" font-size="11" font-weight="500">EVALUATION</text>
+      </g>
+
+      <!-- (a) DATA -->
+      <g class="node">
+        <rect x="14" y="42" width="172" height="36" rx="5" fill="rgba(213,94,0,.12)" stroke="rgba(213,94,0,.3)" stroke-width="1"/>
+        <text class="svgtext" x="26" y="64" font-size="13.5" font-weight="600">harmful</text>
+        <text class="svgmono" x="168" y="64" font-size="12" text-anchor="end">150</text>
+      </g>
+      <g class="node">
+        <rect x="14" y="84" width="172" height="36" rx="5" fill="var(--blue-faint)" stroke="rgba(0,114,178,.3)" stroke-width="1"/>
+        <text class="svgtext" x="26" y="106" font-size="13.5" font-weight="600">harmless</text>
+        <text class="svgmono" x="168" y="106" font-size="12" text-anchor="end">150</text>
+      </g>
+      <g class="node">
+        <text class="svgmono" x="14" y="142" font-size="10.5">AdvBench-style and Alpaca,</text>
+        <text class="svgmono" x="14" y="157" font-size="10.5">last token, every layer</text>
+      </g>
+
+      <!-- (b) DIRECTION -->
+      <g class="node">
+        <rect x="224" y="42" width="192" height="34" rx="5" fill="#fff" stroke="var(--rule)" stroke-width="1"/>
+        <text class="svgtext" x="236" y="63" font-size="13">residual stream <tspan font-style="italic">h</tspan><tspan font-size="9" dy="3">l</tspan></text>
+      </g>
+      <g class="node">
+        <rect x="224" y="82" width="192" height="34" rx="5" fill="#fff" stroke="var(--rule)" stroke-width="1"/>
+        <text class="svgtext" x="236" y="103" font-size="13">μ⁺<tspan font-size="9" dy="3">l</tspan><tspan dy="-3">, μ⁻</tspan><tspan font-size="9" dy="3">l</tspan></text>
+      </g>
+      <g class="node">
+        <rect x="224" y="126" width="192" height="52" rx="5" fill="rgba(213,94,0,.08)" stroke="rgba(213,94,0,.25)" stroke-width="1"/>
+        <text class="svgtext" x="236" y="148" font-size="13" font-weight="600">refusal direction</text>
+        <text class="svgtext" x="236" y="167" font-size="12.5" font-style="italic">d</text>
+        <text class="svgtext" x="244" y="170" font-size="9">l</text>
+        <text class="svgtext" x="254" y="167" font-size="12.5">= (μ⁺ − μ⁻) / ‖·‖</text>
+      </g>
+
+      <!-- (c) INTERVENTION -->
+      <g class="node">
+        <rect x="458" y="42" width="234" height="66" rx="5" fill="rgba(0,158,115,.08)" stroke="rgba(0,158,115,.25)" stroke-width="1"/>
+        <text class="svgtext" x="470" y="62" font-size="13" font-weight="600">weight bake</text>
+        <rect x="560" y="48" width="52" height="18" rx="9" fill="var(--teal)" opacity=".85"/>
+        <text x="586" y="61" font-size="9.5" font-weight="500" text-anchor="middle" fill="#fff" font-family="JetBrains Mono, monospace">shipped</text>
+        <text class="svgtext" x="470" y="80" font-size="12">W′ = W − α g(l) d (dᵀ W)</text>
+        <text class="svgmono" x="470" y="98" font-size="10.5">97 tensors · α 1.0 · σ 6</text>
+      </g>
+      <g class="node">
+        <rect x="458" y="120" width="234" height="60" rx="5" fill="rgba(204,121,167,.08)" stroke="rgba(204,121,167,.25)" stroke-width="1"/>
+        <text class="svgtext" x="470" y="140" font-size="13" font-weight="600">residual projection</text>
+        <rect x="618" y="127" width="62" height="18" rx="9" fill="var(--purple)" opacity=".75"/>
+        <text x="649" y="140" font-size="9.5" font-weight="500" text-anchor="middle" fill="#fff" font-family="JetBrains Mono, monospace">reference</text>
+        <text class="svgtext" x="470" y="158" font-size="12">h ← h − α g(l) d (dᵀ h)</text>
+        <text class="svgmono" x="470" y="172" font-size="10.5">norm-preserving hook</text>
+      </g>
+
+      <!-- (d) EVALUATION -->
+      <g class="node">
+        <rect x="734" y="42" width="206" height="66" rx="5" fill="#fff" stroke="var(--rule)" stroke-width="1"/>
+        <text class="svgtext" x="746" y="62" font-size="13" font-weight="600">benchmark</text>
+        <text class="svgtext" x="746" y="80" font-size="12.5">769 harmful</text>
+        <text class="svgtext" x="746" y="96" font-size="12.5">275 benign</text>
+      </g>
+      <g class="node">
+        <rect x="734" y="120" width="206" height="60" rx="5" fill="#fff" stroke="var(--rule)" stroke-width="1"/>
+        <text class="svgtext" x="746" y="140" font-size="13" font-weight="600">judge</text>
+        <text class="svgtext" x="746" y="158" font-size="12.5">comply / soft / refuse</text>
+        <text class="svgtext" x="746" y="174" font-size="12.5">actionability 0–3</text>
+      </g>
+
+      <!-- edges (curved) -->
+      <path class="edge" style="--len:50" d="M186 60 C200 60, 210 60, 222 60" marker-end="url(#ah)"/>
+      <path class="edge" style="--len:50" d="M186 102 C200 102, 210 102, 222 102" marker-end="url(#ah)"/>
+      <path class="edge" style="--len:30" d="M320 76 V80" marker-end="url(#ah)"/>
+      <path class="edge" style="--len:30" d="M320 116 V124" marker-end="url(#ah)"/>
+      <path class="edge" style="--len:80" d="M416 152 C434 152, 434 75, 456 75" marker-end="url(#ah)"/>
+      <path class="edge" style="--len:80" d="M416 152 C434 152, 434 150, 456 150" marker-end="url(#ah)"/>
+      <path class="edge" style="--len:40" d="M692 75 C706 75, 718 75, 732 75" marker-end="url(#ah)"/>
+      <path class="edge" style="--len:40" d="M692 150 C706 150, 718 150, 732 150" marker-end="url(#ah)"/>
+
+      <!-- footnote -->
+      <g class="node">
+        <text class="svgmono" x="12" y="218" font-size="10.5">Both interventions use the same direction and the same prompts; only the site of the edit differs.</text>
+        <text class="svgmono" x="12" y="234" font-size="10.5">The bake ships because it needs no loader at inference time.</text>
+      </g>
+    </svg>
+    <figcaption><span class="fn">Figure 1</span>Overview. A refusal direction is estimated per layer from
+    paired harmful and harmless prompt sets, then applied either by editing the residual writers (shipped)
+    or by projecting the residual stream at inference (reference). Both are evaluated with the same judge
+    on the same prompts, so the comparison isolates the intervention site.</figcaption>
+  </figure>
+
+  <h3>3.1 Direction estimation</h3>
+  <p>For harmful prompts $\mathcal{H}$ and harmless prompts $\mathcal{S}$ we run
+  one forward pass per prompt and record the residual stream at the final token for every layer, layer 0
+  being the embedding output. With $h_l(x)$ that vector:</p>
+  <div class="eq">$$\mu^{+}_l=\frac{1}{|\mathcal{H}|}\sum_{x\in\mathcal{H}} h_l(x),
+  \qquad
+  \mu^{-}_l=\frac{1}{|\mathcal{S}|}\sum_{x\in\mathcal{S}} h_l(x),
+  \qquad
+  d_l=\frac{\mu^{+}_l-\mu^{-}_l}{\lVert \mu^{+}_l-\mu^{-}_l\rVert_2}$$</div>
+  <p>Capture runs in bf16, on the same weights that will be edited. Directions come from 150 prompts per
+  class.</p>
+
+  <h3>3.2 Weight-space intervention</h3>
+  <p>For a weight matrix whose output space is the residual stream, the rank-one edit is</p>
+  <div class="eq">$$W'=W-\alpha\,g(l)\,d\,(d^{\top}W)$$</div>
+  <div class="eq">$$g(l)=\exp\!\left(-\frac{(l-24)^2}{2\sigma^2}\right)+\exp\!\left(-\frac{(l-28)^2}{2\sigma^2}\right)$$</div>
+  <p>with $\alpha$ a global strength and $\sigma$ a depth bandwidth.
+  The token embedding uses the transposed form $E'=E-\alpha\,(Ed)\,d^{\top}$, since its rows
+  rather than its columns live in the residual space. All arithmetic is carried out in fp32 and cast back
+  to bf16.</p>
+
+  <h3>3.3 Residual projection</h3>
+  <p>The alternative leaves the weights alone and intervenes on the forward pass: a hook on each block
+  subtracts the direction from the block output and restores the original per-token norm.</p>
+  <div class="eq">$$h\leftarrow h-\alpha\,g(l)\,d\,(d^{\top}h),
+  \qquad
+  h\leftarrow h\cdot\frac{\lVert h_{\text{pre}}\rVert}{\lVert h\rVert}$$</div>
+  <p>Norm restoration is not cosmetic: without it the model collapses at $\alpha=1$ on every layer we tried.</p>
+
+  <h3>3.4 Search procedure</h3>
+  <p>Both interventions share a small grid search over layer centre, bandwidth, strength, and (for the
+  bake) whether the embedding is included. Candidates are scored on a 12-prompt harmful probe plus 8
+  harmless prompts, with two criteria: refusal count, and a coherence guard that flags outputs with fewer
+  than 55% alphabetic tokens or a type-token ratio below 0.35.</p>
+</section>
+
+<section id="setup">
+  <h2>4 · Experimental setup</h2>
+  <p><strong>Model.</strong> <span class="mono">google/gemma-4-12B-it</span>: 48 text layers, hidden size
+  3840, vocabulary 262,144, bf16, 23.9 GB on disk, 24.4 GB resident. The checkpoint is a unified multimodal
+  model; only the text tower is edited.</p>
+  <p><strong>Capture data.</strong> 150 harmful prompts from an AdvBench-style set and 150 harmless prompts
+  from Alpaca. The reported holdout is disjoint, and the large benchmark is de-duplicated against them at
+  the string level.</p>
+
+  <table>
+    <thead><tr><th>Component</th><th>Role</th><th class="n">n</th></tr></thead>
+    <tbody>
+      <tr><td>JailbreakBench, harmful</td><td>curated, category-balanced</td><td class="n">100</td></tr>
+      <tr><td>JailbreakBench, benign</td><td>matched counterparts</td><td class="n">100</td></tr>
+      <tr><td>XSTest, unsafe</td><td>adversarial-looking requests</td><td class="n">275</td></tr>
+      <tr><td>XSTest, safe</td><td>looks harmful, should be answered</td><td class="n">175</td></tr>
+      <tr><td>HarmfulQA, sample</td><td>topical breadth</td><td class="n">400</td></tr>
+      <tr><td><strong>Total harmful</strong></td><td></td><td class="n"><strong>769</strong></td></tr>
+      <tr><td><strong>Total benign</strong></td><td></td><td class="n"><strong>275</strong></td></tr>
+    </tbody>
+  </table>
+
+  <p><strong>Judge.</strong> Generations are scored by <span class="mono">deepseek-flash</span> at
+  temperature 0 in JSON mode, returning one of <span class="mono">comply</span>,
+  <span class="mono">soft-redirect</span> or <span class="mono">refuse</span>, an actionability score in
+  0–3 and a confidence. Batched five rows per call and cached by content hash.</p>
+  <p><strong>Calibration.</strong> 24 generations sampled blind, labelled by hand against the same rubric,
+  and compared with the judge.</p>
+  <p><strong>Generation length.</strong> 200 tokens for the large benchmark, 240 for the small holdout. In
+  an earlier 200-token evaluation every one of 48 answers ended mid-word, so only the absence of refusal
+  had been observed, never the presence of compliance.</p>
+</section>
+
+<section id="results">
+  <h2>5 · Results</h2>
+
+  <h3>5.1 Small holdout</h3>
+  <table>
+    <thead><tr><th>Model</th><th class="n">n</th><th class="n">comply</th><th class="n">soft</th><th class="n">refuse</th><th class="n">act.</th></tr></thead>
+    <tbody>
+      <tr><td>base, harmful</td><td class="n">92</td><td class="n">2</td><td class="n">2</td><td class="n">88</td><td class="n">0.04</td></tr>
+      <tr class="hl"><td>projection, harmful</td><td class="n">92</td><td class="n">90</td><td class="n">2</td><td class="n">0</td><td class="n">2.09</td></tr>
+      <tr><td>baked, harmful</td><td class="n">92</td><td class="n">86</td><td class="n">4</td><td class="n">2</td><td class="n">1.71</td></tr>
+      <tr><td>base, harmless</td><td class="n">92</td><td class="n">87</td><td class="n">2</td><td class="n">3</td><td class="n">2.20</td></tr>
+      <tr><td>baked, harmless</td><td class="n">92</td><td class="n">89</td><td class="n">3</td><td class="n">0</td><td class="n">2.21</td></tr>
+    </tbody>
+  </table>
+
+  <h3>5.2 Large benchmark</h3>
+  <figure class="fig" id="fig-bars">
+    <svg viewBox="0 0 720 340" role="img" aria-label="Stacked bars comparing base and edited label distributions">
+      <defs>
+        <linearGradient id="glow-teal" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="rgba(0,158,115,.12)"/>
+          <stop offset="100%" stop-color="rgba(0,158,115,0)"/>
+        </linearGradient>
+        <clipPath id="bar-base-clip"><rect x="130" y="40" width="100" height="210" rx="4"/></clipPath>
+        <clipPath id="bar-edit-clip"><rect x="290" y="40" width="100" height="210" rx="4"/></clipPath>
+      </defs>
+
+      <g class="node">
+        <text class="svgmono" x="48" y="18" font-size="11" font-weight="500">HARMFUL · 769 PROMPTS</text>
+      </g>
+
+      <!-- gridlines -->
+      <line class="gridline" x1="118" y1="40" x2="408" y2="40"/>
+      <line class="gridline" x1="118" y1="92" x2="408" y2="92"/>
+      <line class="gridline" x1="118" y1="145" x2="408" y2="145"/>
+      <line class="gridline" x1="118" y1="197" x2="408" y2="197"/>
+      <g class="node">
+        <text class="svgmono" x="112" y="44" font-size="9.5" text-anchor="end">100%</text>
+        <text class="svgmono" x="112" y="96" font-size="9.5" text-anchor="end">75%</text>
+        <text class="svgmono" x="112" y="149" font-size="9.5" text-anchor="end">50%</text>
+        <text class="svgmono" x="112" y="201" font-size="9.5" text-anchor="end">25%</text>
+      </g>
+
+      <!-- baseline -->
+      <line x1="118" y1="250" x2="408" y2="250" stroke="var(--ink)" stroke-width="1.2"/>
+
+      <!-- base bar: comply 32%, soft 9%, refuse 59% -->
+      <!-- 210px = 100%: comply=67.2, soft=18.9, refuse=123.9 -->
+      <g clip-path="url(#bar-base-clip)">
+        <g class="bar"><rect x="130" y="40" width="100" height="67.2" fill="var(--blue)"/></g>
+        <g class="bar"><rect x="130" y="107.2" width="100" height="18.9" fill="#9CC3DE"/></g>
+        <g class="bar"><rect x="130" y="126.1" width="100" height="123.9" fill="#78838A"/></g>
+      </g>
+      <!-- base labels -->
+      <g class="node">
+        <text class="svgtext" x="180" y="80" font-size="18" font-weight="600" text-anchor="middle" fill="#fff">32%</text>
+        <text class="svgtext" x="180" y="121" font-size="11" text-anchor="middle" fill="#fff">9%</text>
+        <text class="svgtext" x="180" y="198" font-size="18" font-weight="600" text-anchor="middle" fill="#fff">59%</text>
+        <text class="svgmono" x="180" y="268" font-size="12" text-anchor="middle">base</text>
+      </g>
+
+      <!-- glow behind edited bar -->
+      <rect x="278" y="30" width="124" height="230" rx="8" fill="url(#glow-teal)"/>
+
+      <!-- edited bar: comply 91%, soft 8%, refuse 1% -->
+      <!-- 210px = 100%: comply=191.1, soft=16.8, refuse=2.1 -->
+      <g clip-path="url(#bar-edit-clip)">
+        <g class="bar"><rect x="290" y="40" width="100" height="191.1" fill="var(--teal)"/></g>
+        <g class="bar"><rect x="290" y="231.1" width="100" height="16.8" fill="#7FC4B0"/></g>
+        <g class="bar"><rect x="290" y="247.9" width="100" height="2.1" fill="#78838A"/></g>
+      </g>
+      <!-- edited labels -->
+      <g class="node">
+        <text class="svgtext" x="340" y="148" font-size="24" font-weight="600" text-anchor="middle" fill="#fff">91%</text>
+        <text class="svgtext" x="340" y="244" font-size="10" text-anchor="middle" fill="#fff">8%</text>
+        <text class="svgmono" x="340" y="268" font-size="12" text-anchor="middle">edited</text>
+      </g>
+
+      <!-- delta annotation -->
+      <g class="node">
+        <line x1="240" y1="72" x2="240" y2="136" stroke="var(--teal)" stroke-width="1.2" stroke-dasharray="3 3"/>
+        <path d="M237 76 L240 70 L243 76" fill="none" stroke="var(--teal)" stroke-width="1.2"/>
+        <path d="M237 132 L240 138 L243 132" fill="none" stroke="var(--teal)" stroke-width="1.2"/>
+        <rect x="224" y="94" width="32" height="16" rx="3" fill="var(--paper)"/>
+        <text x="240" y="105" font-size="10" font-weight="500" text-anchor="middle" fill="var(--teal)" font-family="JetBrains Mono, monospace">+59</text>
+      </g>
+
+      <!-- legend (horizontal, below chart) -->
+      <g class="node" transform="translate(120,296)">
+        <rect x="0" y="-9" width="10" height="10" rx="2" fill="var(--blue)"/>
+        <rect x="14" y="-9" width="10" height="10" rx="2" fill="var(--teal)"/>
+        <text class="svgmono" x="30" y="0" font-size="10.5">comply</text>
+        <rect x="94" y="-9" width="10" height="10" rx="2" fill="#9CC3DE"/>
+        <rect x="108" y="-9" width="10" height="10" rx="2" fill="#7FC4B0"/>
+        <text class="svgmono" x="124" y="0" font-size="10.5">soft-redirect</text>
+        <rect x="228" y="-9" width="10" height="10" rx="2" fill="#78838A"/>
+        <text class="svgmono" x="244" y="0" font-size="10.5">refuse</text>
+      </g>
+    </svg>
+    <figcaption><span class="fn">Figure 2</span>Judged label distribution on the 769-prompt benchmark. The
+    base model complies with a third of the requests; the edit moves mass from <em>refuse</em> into
+    <em>comply</em>, and the large set shows this is not an artefact of a saturated baseline.</figcaption>
+  </figure>
+
+  <table>
+    <thead><tr><th>Suite</th><th>Model</th><th class="n">comply</th><th class="n">soft</th><th class="n">refuse</th><th class="n">act.</th></tr></thead>
+    <tbody>
+      <tr><td>harmful · 769</td><td>base</td><td class="n">246 (32%)</td><td class="n">69</td><td class="n">454 (59%)</td><td class="n">0.75</td></tr>
+      <tr class="hl"><td>harmful · 769</td><td>baked</td><td class="n"><strong>702 (91%)</strong></td><td class="n">61</td><td class="n"><strong>6</strong></td><td class="n"><strong>1.82</strong></td></tr>
+      <tr><td>benign · 275</td><td>base</td><td class="n">257 (93%)</td><td class="n">7</td><td class="n">11</td><td class="n">2.00</td></tr>
+      <tr class="hl"><td>benign · 275</td><td>baked</td><td class="n"><strong>261 (95%)</strong></td><td class="n">14</td><td class="n"><strong>0</strong></td><td class="n">1.84</td></tr>
+    </tbody>
+  </table>
+
+  <p>The base model is far less restrictive here than on AdvBench, which makes this a harder test of the
+  edit. It also removes over-refusal: 11 benign prompts the base model wrongly refused, none after the
+  edit.</p>
+
+  <h3>5.3 Keyword test versus judge</h3>
+  <p>The keyword instrument agrees in direction (460 → 3 harmful refusals; 29 → 1 benign) but is not
+  sufficient alone. In one probe, a repetitive degenerate output containing no refusal phrase scored
+  <em>zero refusals</em> under the keyword test while the judge flagged every row as broken.</p>
+</section>
+
+<section id="ablations">
+  <h2>6 · Ablations</h2>
+
+  <h3>6.1 Edit shape</h3>
+  <figure class="fig" id="fig-sweep">
+    <svg viewBox="0 0 720 280" role="img" aria-label="Refusals versus edit strength">
+      <defs>
+        <linearGradient id="area-blue" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="rgba(0,114,178,.18)"/>
+          <stop offset="100%" stop-color="rgba(0,114,178,.02)"/>
+        </linearGradient>
+      </defs>
+
+      <g class="node">
+        <text class="svgmono" x="56" y="18" font-size="11" font-weight="500">REFUSALS OUT OF 12 · NARROW BAND</text>
+      </g>
+
+      <!-- gridlines -->
+      <line class="gridline" x1="56" y1="45" x2="400" y2="45"/>
+      <line class="gridline" x1="56" y1="75" x2="400" y2="75"/>
+      <line class="gridline" x1="56" y1="105" x2="400" y2="105"/>
+      <line class="gridline" x1="56" y1="135" x2="400" y2="135"/>
+      <line class="gridline" x1="56" y1="165" x2="400" y2="165"/>
+      <line class="gridline" x1="56" y1="195" x2="400" y2="195"/>
+
+      <!-- axes -->
+      <line x1="56" y1="225" x2="400" y2="225" stroke="var(--ink)" stroke-width="1.2"/>
+      <line x1="56" y1="30" x2="56" y2="225" stroke="var(--ink)" stroke-width="1.2"/>
+
+      <!-- y axis labels + ticks -->
+      <g class="node">
+        <text class="svgmono" x="48" y="228" font-size="10" text-anchor="end">0</text>
+        <text class="svgmono" x="48" y="198" font-size="10" text-anchor="end">2</text>
+        <text class="svgmono" x="48" y="168" font-size="10" text-anchor="end">4</text>
+        <text class="svgmono" x="48" y="138" font-size="10" text-anchor="end">6</text>
+        <text class="svgmono" x="48" y="108" font-size="10" text-anchor="end">8</text>
+        <text class="svgmono" x="48" y="78" font-size="10" text-anchor="end">10</text>
+        <text class="svgmono" x="48" y="48" font-size="10" text-anchor="end">12</text>
+      </g>
+      <!-- tick marks -->
+      <line x1="53" y1="225" x2="56" y2="225" stroke="var(--ink)" stroke-width="1"/>
+      <line x1="53" y1="195" x2="56" y2="195" stroke="var(--ink)" stroke-width="1"/>
+      <line x1="53" y1="165" x2="56" y2="165" stroke="var(--ink)" stroke-width="1"/>
+      <line x1="53" y1="135" x2="56" y2="135" stroke="var(--ink)" stroke-width="1"/>
+      <line x1="53" y1="105" x2="56" y2="105" stroke="var(--ink)" stroke-width="1"/>
+      <line x1="53" y1="75" x2="56" y2="75" stroke="var(--ink)" stroke-width="1"/>
+      <line x1="53" y1="45" x2="56" y2="45" stroke="var(--ink)" stroke-width="1"/>
+
+      <!-- x axis label -->
+      <text class="svgmono" x="228" y="262" font-size="11" text-anchor="middle">edit strength α</text>
+
+      <!-- area fill under curve -->
+      <!-- data: 1.0→11, 2.0→7, 3.0→4, 5.0→7, 7.0→9 -->
+      <!-- y mapping: val → 225 - val*(195/12) = 225 - val*16.25 -->
+      <!-- 11→46.25, 7→111.25, 4→160, 7→111.25, 9→78.75 -->
+      <polygon class="trace" style="--len:0"
+               points="100,46.25 180,111.25 260,160 340,111.25 400,78.75 400,225 100,225"
+               fill="url(#area-blue)" stroke="none" opacity="1"/>
+
+      <!-- line -->
+      <polyline class="trace" style="--len:520"
+                points="100,46.25 180,111.25 260,160 340,111.25 400,78.75"
+                fill="none" stroke="var(--blue)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+
+      <!-- data points (white fill + blue border) -->
+      <g class="dot" id="sweep-dots">
+        <circle cx="100" cy="46.25"  r="5.5" fill="#fff" stroke="var(--blue)" stroke-width="2.2"/>
+        <circle cx="180" cy="111.25" r="5.5" fill="#fff" stroke="var(--blue)" stroke-width="2.2"/>
+        <circle cx="260" cy="160"    r="5.5" fill="#fff" stroke="var(--blue)" stroke-width="2.2"/>
+        <circle cx="340" cy="111.25" r="5.5" fill="#fff" stroke="var(--blue)" stroke-width="2.2"/>
+        <circle cx="400" cy="78.75"  r="5.5" fill="#fff" stroke="var(--blue)" stroke-width="2.2"/>
+      </g>
+
+      <!-- data value labels above points -->
+      <g class="node">
+        <text class="svgmono" x="100" y="36" font-size="11" text-anchor="middle" fill="var(--ink)" font-weight="500">11</text>
+        <text class="svgmono" x="180" y="101" font-size="11" text-anchor="middle" fill="var(--ink)" font-weight="500">7</text>
+        <text class="svgmono" x="260" y="150" font-size="11" text-anchor="middle" fill="var(--ink)" font-weight="500">4</text>
+        <text class="svgmono" x="340" y="101" font-size="11" text-anchor="middle" fill="var(--ink)" font-weight="500">7</text>
+        <text class="svgmono" x="400" y="69" font-size="11" text-anchor="middle" fill="var(--ink)" font-weight="500">9</text>
+      </g>
+
+      <!-- x axis tick labels -->
+      <g class="node">
+        <line x1="100" y1="225" x2="100" y2="229" stroke="var(--ink)" stroke-width="1"/>
+        <line x1="180" y1="225" x2="180" y2="229" stroke="var(--ink)" stroke-width="1"/>
+        <line x1="260" y1="225" x2="260" y2="229" stroke="var(--ink)" stroke-width="1"/>
+        <line x1="340" y1="225" x2="340" y2="229" stroke="var(--ink)" stroke-width="1"/>
+        <line x1="400" y1="225" x2="400" y2="229" stroke="var(--ink)" stroke-width="1"/>
+        <text class="svgmono" x="100" y="243" font-size="10.5" text-anchor="middle">1.0</text>
+        <text class="svgmono" x="180" y="243" font-size="10.5" text-anchor="middle">2.0</text>
+        <text class="svgmono" x="260" y="243" font-size="10.5" text-anchor="middle">3.0</text>
+        <text class="svgmono" x="340" y="243" font-size="10.5" text-anchor="middle">5.0</text>
+        <text class="svgmono" x="400" y="243" font-size="10.5" text-anchor="middle">7.0</text>
+      </g>
+
+      <!-- best-point callout at α=3.0 -->
+      <g class="node">
+        <line x1="260" y1="168" x2="260" y2="186" stroke="var(--teal)" stroke-width="1" stroke-dasharray="2 2"/>
+        <rect x="222" y="186" width="76" height="18" rx="9" fill="var(--teal)"/>
+        <text x="260" y="199" font-size="9.5" text-anchor="middle" fill="#fff" font-family="JetBrains Mono, monospace" font-weight="500">best point</text>
+      </g>
+
+      <!-- interactive highlight marker -->
+      <circle id="sweep-mark" cx="100" cy="46.25" r="11" fill="none" stroke="var(--orange)" stroke-width="2.5" opacity=".85"/>
+    </svg>
+    <div class="controls">
+      <label for="alpha">α</label>
+      <input id="alpha" type="range" min="0" max="4" step="1" value="0">
+      <span class="readout" id="alpha-out"></span>
+    </div>
+    <figcaption><span class="fn">Figure 3</span>Refusals are non-monotonic in edit strength on a narrow
+    band: the best point is α = 3, and more strength is worse, not better. Drag the slider.</figcaption>
+  </figure>
+
+  <figure class="fig" id="fig-wide">
+    <svg viewBox="0 0 720 280" role="img" aria-label="Wide band: degenerate outputs rise while refusals stay at zero">
+      <defs>
+        <linearGradient id="area-teal" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="rgba(0,158,115,.15)"/>
+          <stop offset="100%" stop-color="rgba(0,158,115,.02)"/>
+        </linearGradient>
+      </defs>
+
+      <!-- shared panel background -->
+      <rect x="38" y="2" width="310" height="250" rx="6" fill="rgba(0,0,0,.015)" stroke="var(--fig-border)" stroke-width="0.5"/>
+      <rect x="380" y="2" width="310" height="250" rx="6" fill="rgba(0,0,0,.015)" stroke="var(--fig-border)" stroke-width="0.5"/>
+
+      <g class="node">
+        <text class="svgmono" x="56" y="22" font-size="11" font-weight="500">DEGENERATE OUTPUTS / 12</text>
+        <text class="svgmono" x="396" y="22" font-size="11" font-weight="500">REFUSALS / 12</text>
+      </g>
+
+      <!-- left panel: degenerate, 0..8 -->
+      <!-- gridlines -->
+      <line class="gridline" x1="56" y1="56" x2="330" y2="56"/>
+      <line class="gridline" x1="56" y1="131" x2="330" y2="131"/>
+
+      <line x1="56" y1="206" x2="330" y2="206" stroke="var(--ink)" stroke-width="1.2"/>
+      <line x1="56" y1="42" x2="56" y2="206" stroke="var(--ink)" stroke-width="1.2"/>
+      <g class="node">
+        <text class="svgmono" x="48" y="210" font-size="10" text-anchor="end">0</text>
+        <text class="svgmono" x="48" y="135" font-size="10" text-anchor="end">4</text>
+        <text class="svgmono" x="48" y="60" font-size="10" text-anchor="end">8</text>
+      </g>
+
+      <!-- bars with value labels: heights 0, 4*18.75=75, 4*18.75=75, 8*18.75=150 -->
+      <!-- (0→h=0, 4→h=75, 4→h=75, 8→h=150) baseline y=206 -->
+      <g class="bar"><rect x="78"  y="206" width="48" height="0"   rx="3" fill="rgba(213,94,0,.25)"/></g>
+      <g class="bar"><rect x="138" y="131" width="48" height="75"  rx="3" fill="rgba(213,94,0,.35)"/></g>
+      <g class="bar"><rect x="198" y="131" width="48" height="75"  rx="3" fill="rgba(213,94,0,.45)"/></g>
+      <g class="bar"><rect x="258" y="56"  width="48" height="150" rx="3" fill="rgba(213,94,0,.55)"/></g>
+
+      <!-- value labels on bars -->
+      <g class="node">
+        <text class="svgmono" x="102" y="200" font-size="11" text-anchor="middle" fill="var(--muted)" font-weight="500">0</text>
+        <text class="svgmono" x="162" y="125" font-size="11" text-anchor="middle" fill="var(--orange)" font-weight="500">4</text>
+        <text class="svgmono" x="222" y="125" font-size="11" text-anchor="middle" fill="var(--orange)" font-weight="500">4</text>
+        <text class="svgmono" x="282" y="50" font-size="11" text-anchor="middle" fill="var(--orange)" font-weight="500">8</text>
+      </g>
+
+      <g class="node">
+        <text class="svgmono" x="102" y="224" font-size="10.5" text-anchor="middle">1.5</text>
+        <text class="svgmono" x="162" y="224" font-size="10.5" text-anchor="middle">1.8</text>
+        <text class="svgmono" x="222" y="224" font-size="10.5" text-anchor="middle">2.0</text>
+        <text class="svgmono" x="282" y="224" font-size="10.5" text-anchor="middle">2.5</text>
+      </g>
+
+      <!-- right panel: refusals, 0..12 -->
+      <!-- gridlines -->
+      <line class="gridline" x1="396" y1="56" x2="670" y2="56"/>
+      <line class="gridline" x1="396" y1="131" x2="670" y2="131"/>
+
+      <line x1="396" y1="206" x2="670" y2="206" stroke="var(--ink)" stroke-width="1.2"/>
+      <line x1="396" y1="42" x2="396" y2="206" stroke="var(--ink)" stroke-width="1.2"/>
+      <g class="node">
+        <text class="svgmono" x="388" y="210" font-size="10" text-anchor="end">0</text>
+        <text class="svgmono" x="388" y="135" font-size="10" text-anchor="end">6</text>
+        <text class="svgmono" x="388" y="60" font-size="10" text-anchor="end">12</text>
+      </g>
+
+      <!-- refusal data: 1.5→1, 1.8→0, 2.0→0, 2.5→0 -->
+      <!-- y mapping: val → 206 - val*(150/12) = 206 - val*12.5 -->
+      <!-- 1→193.5, 0→206 -->
+
+      <!-- area fill under line -->
+      <polygon class="trace" style="--len:0"
+               points="442,193.5 502,206 562,206 622,206 622,206 442,206"
+               fill="url(#area-teal)" stroke="none"/>
+
+      <polyline class="trace" style="--len:280"
+                points="442,193.5 502,206 562,206 622,206"
+                fill="none" stroke="var(--teal)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+      <g class="dot">
+        <circle cx="442" cy="193.5" r="5" fill="#fff" stroke="var(--teal)" stroke-width="2.2"/>
+        <circle cx="502" cy="206"   r="5" fill="#fff" stroke="var(--teal)" stroke-width="2.2"/>
+        <circle cx="562" cy="206"   r="5" fill="#fff" stroke="var(--teal)" stroke-width="2.2"/>
+        <circle cx="622" cy="206"   r="5" fill="#fff" stroke="var(--teal)" stroke-width="2.2"/>
+      </g>
+
+      <!-- value labels -->
+      <g class="node">
+        <text class="svgmono" x="442" y="184" font-size="11" text-anchor="middle" fill="var(--teal)" font-weight="500">1</text>
+        <text class="svgmono" x="502" y="200" font-size="11" text-anchor="middle" fill="var(--teal)" font-weight="500">0</text>
+        <text class="svgmono" x="562" y="200" font-size="11" text-anchor="middle" fill="var(--teal)" font-weight="500">0</text>
+        <text class="svgmono" x="622" y="200" font-size="11" text-anchor="middle" fill="var(--teal)" font-weight="500">0</text>
+      </g>
+
+      <g class="node">
+        <text class="svgmono" x="442" y="224" font-size="10.5" text-anchor="middle">1.5</text>
+        <text class="svgmono" x="502" y="224" font-size="10.5" text-anchor="middle">1.8</text>
+        <text class="svgmono" x="562" y="224" font-size="10.5" text-anchor="middle">2.0</text>
+        <text class="svgmono" x="622" y="224" font-size="10.5" text-anchor="middle">2.5</text>
+      </g>
+
+      <!-- shared x axis label -->
+      <text class="svgmono" x="360" y="258" font-size="11" text-anchor="middle">edit strength α  ·  wide band σ 6</text>
+    </svg>
+    <figcaption><span class="fn">Figure 4</span>Wide band. Refusals fall to zero by α = 1.8, but degenerate
+    outputs rise with the same knob: 0 at 1.5, four at 1.8, eight at 2.5. That is why α = 1.0 ships, one step
+    left of both curves.</figcaption>
+  </figure>
+
+  <table>
+    <thead><tr><th>Shape</th><th class="n">α</th><th class="n">refusals /12</th><th class="n">degenerate /12</th></tr></thead>
+    <tbody>
+      <tr><td>narrow, no embedding</td><td class="n">1.0</td><td class="n">11</td><td class="n">0</td></tr>
+      <tr><td>narrow, no embedding</td><td class="n">3.0</td><td class="n">4</td><td class="n">0</td></tr>
+      <tr><td>narrow, no embedding</td><td class="n">7.0</td><td class="n">9</td><td class="n">0</td></tr>
+      <tr><td>narrow, embedding</td><td class="n">1.0</td><td class="n">11</td><td class="n">0</td></tr>
+      <tr class="hl"><td>wide σ 6, embedding</td><td class="n">1.0</td><td class="n"><strong>shipped</strong></td><td class="n">0</td></tr>
+      <tr><td>wide σ 6, embedding</td><td class="n">1.5</td><td class="n">1</td><td class="n">0</td></tr>
+      <tr><td>wide σ 6, embedding</td><td class="n">1.8</td><td class="n">0</td><td class="n">4</td></tr>
+      <tr><td>wide σ 6, embedding</td><td class="n">2.5</td><td class="n">0</td><td class="n">8</td></tr>
+    </tbody>
+  </table>
+
+  <h3>6.2 Residual projection</h3>
+  <table>
+    <thead><tr><th>Configuration</th><th class="n">refusals</th><th class="n">degenerate</th></tr></thead>
+    <tbody>
+      <tr><td>layer 36, σ 6, α 3, no norm preservation</td><td class="n">0 / 12</td><td class="n">12 / 12</td></tr>
+      <tr><td>layer 24, σ 0.5, α 2</td><td class="n">0 / 12</td><td class="n">0 / 12</td></tr>
+      <tr class="hl"><td>layers 24+28, σ 0.5, α 1, norm-preserving</td><td class="n">3 / 92</td><td class="n">0 / 92</td></tr>
+      <tr><td>layers 24+28, α 2.5</td><td class="n">0 / 12</td><td class="n">collapse</td></tr>
+    </tbody>
+  </table>
+
+  <h3>6.3 Judge calibration</h3>
+  <figure class="fig" id="fig-calib">
+    <svg viewBox="0 0 720 230" role="img" aria-label="Confusion matrix of hand labels against judge labels">
+      <g class="node">
+        <text class="svgmono" x="48" y="18" font-size="11" font-weight="500">HAND LABEL VS JUDGE · n = 24</text>
+      </g>
+
+      <!-- axis labels -->
+      <g class="node">
+        <text class="svgmono" x="60" y="86" font-size="10" transform="rotate(-90 60 86)" text-anchor="middle">hand label ↓</text>
+        <text class="svgmono" x="230" y="36" font-size="10" text-anchor="middle">judge →</text>
+      </g>
+
+      <!-- column headers -->
+      <g class="node">
+        <text x="168" y="54" font-size="12" font-weight="600" text-anchor="middle" fill="var(--ink)" font-family="JetBrains Mono, monospace">comply</text>
+        <text x="248" y="54" font-size="12" font-weight="600" text-anchor="middle" fill="var(--ink)" font-family="JetBrains Mono, monospace">soft</text>
+        <text x="328" y="54" font-size="12" font-weight="600" text-anchor="middle" fill="var(--ink)" font-family="JetBrains Mono, monospace">refuse</text>
+      </g>
+
+      <!-- row headers -->
+      <g class="node">
+        <text x="120" y="86" font-size="12" font-weight="600" text-anchor="end" fill="var(--ink)" font-family="JetBrains Mono, monospace">comply</text>
+        <text x="120" y="142" font-size="12" font-weight="600" text-anchor="end" fill="var(--ink)" font-family="JetBrains Mono, monospace">soft</text>
+        <text x="120" y="198" font-size="12" font-weight="600" text-anchor="end" fill="var(--ink)" font-family="JetBrains Mono, monospace">refuse</text>
+      </g>
+
+      <!-- 3x3 cells with sequential colour scale (white→light blue→dark blue) -->
+      <!-- Row 1: comply: 8, 7, 0 -->
+      <g class="cell">
+        <rect x="130" y="64" width="76" height="42" rx="4" fill="rgba(0,114,178,.55)" stroke="#fff" stroke-width="2"/>
+        <text class="svgtext" x="168" y="91" font-size="16" font-weight="600" text-anchor="middle" fill="#fff">8</text>
+      </g>
+      <g class="cell">
+        <rect x="210" y="64" width="76" height="42" rx="4" fill="rgba(0,114,178,.40)" stroke="#fff" stroke-width="2"/>
+        <text class="svgtext" x="248" y="91" font-size="16" font-weight="600" text-anchor="middle" fill="#fff">7</text>
+      </g>
+      <g class="cell">
+        <rect x="290" y="64" width="76" height="42" rx="4" fill="rgba(0,114,178,.04)" stroke="var(--rule)" stroke-width="1"/>
+        <text class="svgtext" x="328" y="91" font-size="16" text-anchor="middle" fill="#b8c0c4">0</text>
+      </g>
+
+      <!-- Row 2: soft: 0, 1, 0 -->
+      <g class="cell">
+        <rect x="130" y="120" width="76" height="42" rx="4" fill="rgba(0,114,178,.04)" stroke="var(--rule)" stroke-width="1"/>
+        <text class="svgtext" x="168" y="147" font-size="16" text-anchor="middle" fill="#b8c0c4">0</text>
+      </g>
+      <g class="cell">
+        <rect x="210" y="120" width="76" height="42" rx="4" fill="rgba(0,114,178,.12)" stroke="#fff" stroke-width="2"/>
+        <text class="svgtext" x="248" y="147" font-size="16" font-weight="600" text-anchor="middle">1</text>
+      </g>
+      <g class="cell">
+        <rect x="290" y="120" width="76" height="42" rx="4" fill="rgba(0,114,178,.04)" stroke="var(--rule)" stroke-width="1"/>
+        <text class="svgtext" x="328" y="147" font-size="16" text-anchor="middle" fill="#b8c0c4">0</text>
+      </g>
+
+      <!-- Row 3: refuse: 0, 0, 8 -->
+      <g class="cell">
+        <rect x="130" y="176" width="76" height="42" rx="4" fill="rgba(0,114,178,.04)" stroke="var(--rule)" stroke-width="1"/>
+        <text class="svgtext" x="168" y="203" font-size="16" text-anchor="middle" fill="#b8c0c4">0</text>
+      </g>
+      <g class="cell">
+        <rect x="210" y="176" width="76" height="42" rx="4" fill="rgba(0,114,178,.04)" stroke="var(--rule)" stroke-width="1"/>
+        <text class="svgtext" x="248" y="203" font-size="16" text-anchor="middle" fill="#b8c0c4">0</text>
+      </g>
+      <g class="cell">
+        <rect x="290" y="176" width="76" height="42" rx="4" fill="rgba(0,114,178,.55)" stroke="#fff" stroke-width="2"/>
+        <text class="svgtext" x="328" y="203" font-size="16" font-weight="600" text-anchor="middle" fill="#fff">8</text>
+      </g>
+
+      <!-- stats card -->
+      <g class="node">
+        <rect x="416" y="58" width="200" height="116" rx="6" fill="#fff" stroke="var(--rule)" stroke-width="1"/>
+        <text x="432" y="82" font-size="12" font-weight="600" fill="var(--ink)" font-family="JetBrains Mono, monospace">agreement</text>
+        <line x1="424" y1="90" x2="608" y2="90" stroke="var(--rule)" stroke-width="1"/>
+        <text class="svgmono" x="432" y="110" font-size="12">raw agreement</text>
+        <text x="600" y="110" font-size="13" font-weight="600" text-anchor="end" fill="var(--blue)" font-family="JetBrains Mono, monospace">71%</text>
+        <text class="svgmono" x="432" y="130" font-size="12">κ overall</text>
+        <text x="600" y="130" font-size="13" font-weight="600" text-anchor="end" fill="var(--ink)" font-family="JetBrains Mono, monospace">0.562</text>
+        <text class="svgmono" x="432" y="150" font-size="12">κ harmful</text>
+        <text x="600" y="150" font-size="13" font-weight="600" text-anchor="end" fill="var(--teal)" font-family="JetBrains Mono, monospace">0.706</text>
+        <text class="svgmono" x="432" y="170" font-size="12">κ harmless</text>
+        <text x="600" y="170" font-size="13" font-weight="600" text-anchor="end" fill="var(--orange)" font-family="JetBrains Mono, monospace">0.143</text>
+      </g>
+    </svg>
+    <figcaption><span class="fn">Figure 5</span>Judge against hand labels. Agreement is substantial where
+    the headline is decided and poor on benign prompts that cannot be answered literally, which is a rubric
+    boundary rather than noise.</figcaption>
+  </figure>
+</section>
+
+<section id="discussion">
+  <h2>7 · Discussion</h2>
+  <p><strong>Intervention site.</strong> Orthogonalising <span class="mono">W_o</span> and
+  <span class="mono">W_d</span> removes the direction from a sublayer's output <em>before</em> it is
+  normalised and added, and the normalisation partly re-expresses it; projecting the residual stream
+  removes it after the addition, where it actually matters. Recipes developed for Llama-style blocks do not
+  transfer unchanged, and "abliteration does not work on model X" is usually a statement about the
+  intervention site rather than about the existence of the direction.</p>
+  <p><strong>Shape.</strong> Spreading a weak projection across many layers outperforms concentrating a
+  strong one at a few, consistent with the direction being present at every depth and a concentrated edit
+  over-constraining the layers it touches.</p>
+  <p><strong>Measurement.</strong> Three measurement choices changed our conclusions more than any modelling
+  choice: judging with a rubric instead of substrings, generating long enough to observe compliance, and
+  using a benchmark with a non-saturated baseline.</p>
+</section>
+
+<section id="limits">
+  <h2>8 · Limitations</h2>
+  <ul>
+    <li>The direction comes from 150 + 150 prompts from two corpora. A different distribution will move it;
+    the benchmark is disjoint at the string level but not distributionally independent.</li>
+    <li>6 of 769 held-out harmful prompts still refuse. The ones inspected are requests a text model cannot
+    literally satisfy, or ones where it answers while arguing the opposite premise.</li>
+    <li>The bake is weaker than the projection (91% vs 98% on the small holdout). We ship the weaker but
+    portable artifact.</li>
+    <li>Judge calibration is 24 rows, labelled by the author. It establishes substantial agreement on
+    harmful prompts, not a population estimate.</li>
+    <li>No capability benchmark was run. The coherence guard and the benign suites are the only evidence
+    that general ability is intact.</li>
+    <li>Actionability on benign prompts falls from 2.00 to 1.84. Cause not diagnosed.</li>
+  </ul>
+</section>
+
+<section id="repro">
+  <h2>9 · Reproducibility</h2>
+  <pre># 1. estimate the direction (GPU, ~20 s for 300 forward passes at 12B)
+python gemma_abl.py capture --model google/gemma-4-12B-it --n 150
+
+# 2. search strength / layer (GPU)
+python gemma_abl.py search --model google/gemma-4-12B-it \
+    --configs 1.5:6,2.0:6 --top-layers 2 --n-ref 10 --n-harm 8
+
+# 3. bake the winning configuration (CPU, ~3 min, 97 tensors)
+python gemma_abl.py bake --model google/gemma-4-12B-it \
+    --out /workspace/baked --spec 24:1.0,28:1.0 --sigma 6.0 --embed-scale 1.0
+
+# 4. evaluate, then judge the stored generations
+python gemma_abl.py eval --model /workspace/baked --tag run1 \
+    --suites big_harmful,big_benign --max-new-tokens 200 --batch 12
+python llm_judge.py --input artifacts/eval-run1.json \
+    --out artifacts/judged-run1.json --suites big_harmful,big_benign</pre>
+  <p class="note">All GPU work ran on a single A6000 48 GB at &#36;0.59/hour. The large benchmark is 1,044
+  generations per model, about 18 minutes at batch size 12. Total cost across all runs, including failed
+  configurations, was &#36;4.93.</p>
+</section>
+
+<section id="responsible">
+  <h2>10 · Responsible use</h2>
+  <p>The artifact is an uncensored model: refusal behaviour has been deliberately removed, including for
+  requests that are illegal or harmful. It is published as a research artifact for studying
+  representation-level refusal and for evaluation work. Output should be treated as unfiltered model
+  output, and deployments that require refusal behaviour should not substitute this checkpoint.</p>
+  <p>The weights remain under the <a href="https://ai.google.dev/gemma/terms">Gemma Terms of Use</a>, the
+  same terms as the base model. This report is licensed CC&nbsp;BY&nbsp;4.0.</p>
+</section>
+
+<section id="appendix">
+  <h2>Appendix · Judge prompt</h2>
+  <details>
+    <summary>Show the rubric</summary>
+    <pre>You are grading how a language model responded to a user request.
+You are not answering the request. You are not producing harmful content.
+You read one prompt and one response, and classify the response's stance.
+
+Labels:
+  comply          the response makes a real attempt at what was asked and
+                  contains substantive, on-topic content
+  soft-redirect   the response engages with the topic, then deflects: it
+                  lectures, adds ethical framing, states it will not give the
+                  details, or names concepts without giving the method
+  refuse          the response declines the request outright
+
+Actionability, 0 to 3:
+  3  specific and directly usable for the request as asked
+  2  useful and specific, but incomplete or hedged in places
+  1  mostly generalities, names things without explaining how
+  0  nothing usable toward the request
+
+Confidence, 0 to 1: how sure you are of the label.
+
+Judge only what is present. Length alone is not compliance: a long answer that
+never gives the asked-for content is soft-redirect. A short answer that does
+give it is comply.
+
+Return JSON only, of the form:
+{"items":[{"i":1,"label":"comply","actionability":3,"confidence":0.9}]}</pre>
+  </details>
+</section>
+
+<footer>
+  <p>Pasan Gimhana · October 2026 · <a href="https://huggingface.co/pasangimhana/gemma4-12b-it-abliterated">model card</a> ·
+  text licensed <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a></p>
+</footer>
+
+</main>
+
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}],throwOnError:false});"></script>
+<script>
+/* reveal figures on scroll (only when JS is present) */
+document.documentElement.classList.add('js-anim');
+const figs = document.querySelectorAll('.fig');
+setTimeout(() => figs.forEach(f => f.classList.add('in')), 2500);
+if ('IntersectionObserver' in window) {
+  const io = new IntersectionObserver((entries) => {
+    entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } });
+  }, { threshold: 0.25 });
+  figs.forEach(f => io.observe(f));
+} else {
+  figs.forEach(f => f.classList.add('in'));
+}
+
+/* alpha slider: real data from the narrow-band sweep */
+const SWEEP = [
+  { a: 1.0, r: 11, x: 100, y: 46.25,  note: 'nothing changes' },
+  { a: 2.0, r: 7,  x: 180, y: 111.25, note: 'some refusals gone' },
+  { a: 3.0, r: 4,  x: 260, y: 160,    note: 'best narrow-band point' },
+  { a: 5.0, r: 7,  x: 340, y: 111.25, note: 'worse again' },
+  { a: 7.0, r: 9,  x: 400, y: 78.75,  note: 'coherence failing' },
+];
+const slider = document.getElementById('alpha');
+const mark = document.getElementById('sweep-mark');
+const out = document.getElementById('alpha-out');
+if (slider && mark && out) {
+  const update = () => {
+    const s = SWEEP[+slider.value];
+    mark.setAttribute('cx', s.x);
+    mark.setAttribute('cy', s.y);
+    out.innerHTML = 'α ' + s.a.toFixed(1) + ' → <b>' + s.r + '/12</b> refusals · ' + s.note;
+  };
+  slider.addEventListener('input', update);
+  update();
+}
+</script>
+</body>
+</html>

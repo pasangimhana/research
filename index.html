@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Research · Pasan Gimhana</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#263238; --muted:#66717C; --rule:#DDE2E6; --light:#F3F5F7;
+    --blue:#0072B2; --paper:#FCFCFB;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--paper); color:var(--ink);
+    font-family:"Source Serif 4", Georgia, serif;
+    font-size:17px; line-height:1.66;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:720px; margin:0 auto; padding:0 28px}
+  header{padding:80px 0 40px; border-top:3px solid var(--blue)}
+  .kicker{font-family:"JetBrains Mono",monospace; font-size:11px; letter-spacing:.16em;
+          text-transform:uppercase; color:var(--blue)}
+  h1{font-size:34px; line-height:1.2; margin:14px 0 8px; font-weight:600}
+  .sub{font-size:17px; color:var(--muted); margin:0}
+  .papers{list-style:none; padding:0; margin:0}
+  .papers li{border-top:1px solid var(--rule); padding:24px 0}
+  .papers li:last-child{border-bottom:1px solid var(--rule)}
+  .papers a{text-decoration:none; color:inherit; display:block}
+  .papers a:hover .title{color:var(--blue)}
+  .title{font-size:20px; font-weight:600; line-height:1.3; margin:0 0 6px; transition:color .15s}
+  .meta{font-family:"JetBrains Mono",monospace; font-size:12px; color:var(--muted); margin:0 0 8px}
+  .meta span+span::before{content:"·"; margin:0 8px}
+  .desc{font-size:15.5px; color:#3b4744; margin:0; line-height:1.55}
+  .tag{display:inline-block; font-family:"JetBrains Mono",monospace; font-size:10.5px;
+       background:var(--light); border:1px solid var(--rule); border-radius:3px;
+       padding:1px 7px; margin-right:6px; color:var(--muted)}
+  footer{padding:40px 0 60px; font-size:13px; color:var(--muted); text-align:center;
+         border-top:1px solid var(--rule)}
+  footer a{color:var(--blue)}
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <div class="kicker">Research</div>
+    <h1>Pasan Gimhana</h1>
+    <p class="sub">Technical reports and experiments.</p>
+  </div>
+</header>
+<main class="wrap">
+  <ul class="papers">
+    <li>
+      <a href="gemma-4-abliteration/">
+        <p class="title">Removing the refusal direction from Gemma 4 12B</p>
+        <p class="meta">
+          <span>October 2026</span>
+          <span>Gemma 4</span>
+          <span>abliteration</span>
+        </p>
+        <p class="desc">Weight orthogonalisation versus runtime projection on Gemma 4 12B, with a calibrated three-way judge. Shipped checkpoint raises compliance from 32% to 91% on a 769-prompt benchmark.</p>
+        <p class="meta" style="margin-top:8px">
+          <span class="tag">model editing</span>
+          <span class="tag">refusal</span>
+          <span class="tag">evaluation</span>
+        </p>
+      </a>
+    </li>
+  </ul>
+</main>
+<footer>
+  <p>Pasan Gimhana · <a href="https://github.com/pasangimhana">GitHub</a></p>
+</footer>
+</body>
+</html>
